@@ -1,0 +1,28 @@
+subject,level,name,slug
+Science,Beginner,Introduction to Physics,introduction-to-physics
+Science,Beginner,Basics of Environmental Science,environmental-science-basics
+Science,Intermediate,Fundamentals of Chemistry,fundamentals-of-chemistry
+Science,Intermediate,Human Physiology Essentials,human-physiology-essentials
+Science,Advanced,Advanced Biology: Genetics and Evolution,advanced-biology-genetics
+Science,Advanced,Machine Learning for Scientists,machine-learning-for-scientists
+Commerce,Beginner,Introduction to Accounting,introduction-to-accounting
+Commerce,Beginner,Business Communication Skills,business-communication-skills
+Commerce,Intermediate,Principles of Marketing,principles-of-marketing
+Commerce,Intermediate,Data Analytics for Business,data-analytics-for-business
+Commerce,Advanced,Corporate Finance,corporate-finance
+Commerce,Advanced,Strategic Management,strategic-management
+Arts,Beginner,Introduction to History,introduction-to-history
+Arts,Beginner,Basics of Drawing and Sketching,basics-of-drawing
+Arts,Intermediate,Modern Art Techniques,modern-art-techniques
+Arts,Intermediate,Creative Writing Workshop,creative-writing-workshop
+Arts,Advanced,Philosophy and Ethics,philosophy-and-ethics
+Arts,Advanced,Contemporary World History,contemporary-world-history
+Science,Beginner,Energy and Climate Change,energy-and-climate-change
+Science,Intermediate,Introduction to Data Science,introduction-to-data-science
+Science,Advanced,Artificial Intelligence for Everyone,artificial-intelligence-for-everyone
+Commerce,Beginner,Personal Finance Basics,personal-finance-basics
+Commerce,Intermediate,Digital Marketing Fundamentals,digital-marketing-fundamentals
+Commerce,Advanced,Financial Markets and Investment,financial-markets-investment
+Arts,Beginner,Music Theory Foundations,music-theory-foundations
+Arts,Intermediate,Film Appreciation,film-appreciation
+Arts,Advanced,Art History: Renaissance to Modern,art-history-renaissance-modern
