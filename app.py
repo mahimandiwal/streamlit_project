@@ -12,18 +12,19 @@ MODEL_DIR = Path("training/model")
 DATASET_PATH = Path("dataset/courses.csv")
 
 # -------------------- LOAD MODEL FILES -------------------- #
-# NOTE: the model was trained on exactly these 5 columns, in this exact order:
-# ['study_hours_per_week', 'attendance_percentage', 'final_grade',
-#  'extracurricular_Yes', 'part_time_job_Yes']
-# study_hours_per_week and attendance_percentage were normalized to a 0-1 scale
-# in the training data (train_model.py never re-derives that scaling), so we
-# collect them here as 0-100 sliders and divide by 100 to match that range.
+# The model was retrained to fix two issues with the original version:
+# 1. It no longer uses final_grade as an input feature (final_grade was used to
+#    build the label itself, so including it caused label leakage).
+# 2. "Advanced" was merged into "Intermediate" -- the original data had only 9/500
+#    rows labeled Advanced, too few to reliably learn as a separate class.
+# feature_order.pkl stores the exact column order the model expects.
 try:
     model = joblib.load(MODEL_DIR / "model.pkl")
     scaler = joblib.load(MODEL_DIR / "scaler.pkl")
     course_enc = joblib.load(MODEL_DIR / "course_encoder.pkl")
+    feature_order = joblib.load(MODEL_DIR / "feature_order.pkl")
 except Exception as e:
-    st.error("❌ Some model files are missing in 'training/model'. Please make sure model.pkl, scaler.pkl, and course_encoder.pkl exist.")
+    st.error("❌ Some model files are missing in 'training/model'. Please make sure model.pkl, scaler.pkl, course_encoder.pkl, and feature_order.pkl exist.")
     st.stop()
 
 # -------------------- LOAD COURSE DATA -------------------- #
@@ -38,74 +39,81 @@ st.title("🎓 Study Habit Analyzer & Subject Recommender")
 st.markdown("Analyze your study habits and get personalized subject recommendations!")
 
 # -------------------- FORM INPUTS -------------------- #
-# These 5 inputs map directly to the features the model was trained on.
+# These 7 inputs map directly to feature_order, the exact columns the model was trained on:
+# ['study_hours_per_week', 'attendance_percentage', 'sleep_hours_per_day',
+#  'assignments_completed', 'extracurricular_Yes', 'part_time_job_Yes', 'internet_access_Yes']
 with st.form("habit_form"):
+    st.markdown("#### 📈 Inputs used by the ML model")
+
     study_intensity = st.slider(
-        "📚 Study Intensity (relative to peers, 0 = lowest, 100 = highest)",
-        0, 100, 50
+        "📚 Study Intensity (relative to peers, 0 = lowest, 100 = highest)", 0, 100, 50
     )
     st.caption(
-        f"Selected Study Intensity: {study_intensity}/100 "
-        "(the training data used a relative 0-1 study-hours score rather than raw hours, "
-        "so this slider mirrors that same relative scale)"
+        "The training data used a relative 0-1 study-hours score rather than raw hours, "
+        "so this slider mirrors that same relative scale."
     )
 
     attendance = st.slider("🏫 Attendance (%)", 0, 100, 85)
-    st.caption(f"Selected Attendance: {attendance}%")
 
-    test_score = st.slider("🧾 Average Test Score / Final Grade (%)", 0, 100, 70)
-    st.caption(f"Selected Test Score: {test_score}%")
+    sleep_quality = st.slider(
+        "😴 Sleep Consistency (relative to peers, 0 = lowest, 100 = highest)", 0, 100, 50
+    )
+    st.caption("Same relative-scale note applies here as with Study Intensity.")
+
+    assignments_completed_pct = st.slider("📝 Assignments Completed (%)", 0, 100, 75)
 
     extracurricular = st.checkbox("🎭 Participates in Extracurricular Activities?")
     part_time_job = st.checkbox("💼 Has a Part-Time Job?")
+    internet_access = st.checkbox("🌐 Has Reliable Internet Access?", value=True)
 
-    # 10th Passed checkbox (used only for the non-ML course-recommendation section below)
+    st.markdown("---")
+    st.markdown("#### 📘 Inputs used only for the stream/subject recommendation below (not the ML model)")
+    test_score = st.slider("🧾 Average Test Score (%)", 0, 100, 70)
     tenth_passed = st.checkbox("✅ 10th Passed?")
 
     stream = None
     if tenth_passed:
-        stream = st.selectbox("📘 Select Your Preferred Stream", ["Science", "Commerce", "Arts"])
+        stream = st.selectbox("Select Your Preferred Stream", ["Science", "Commerce", "Arts"])
 
     submitted = st.form_submit_button("🔍 Analyze My Habits")
 
 # -------------------- ON SUBMIT -------------------- #
 if submitted:
     # --- MODEL PREDICTION ---
-    # Order must exactly match training: study_hours_per_week, attendance_percentage,
-    # final_grade, extracurricular_Yes, part_time_job_Yes
-    study_hours_per_week_norm = study_intensity / 100
-    attendance_percentage_norm = attendance / 100
-    final_grade = test_score  # already 0-100, matches training scale
-    extracurricular_flag = 1 if extracurricular else 0
-    part_time_flag = 1 if part_time_job else 0
-
-    X = np.array([[
-        study_hours_per_week_norm,
-        attendance_percentage_norm,
-        final_grade,
-        extracurricular_flag,
-        part_time_flag
-    ]])
+    feature_values = {
+        "study_hours_per_week": study_intensity / 100,
+        "attendance_percentage": attendance / 100,
+        "sleep_hours_per_day": sleep_quality / 100,
+        "assignments_completed": assignments_completed_pct / 100,
+        "extracurricular_Yes": 1 if extracurricular else 0,
+        "part_time_job_Yes": 1 if part_time_job else 0,
+        "internet_access_Yes": 1 if internet_access else 0,
+    }
+    # Build the array using feature_order so it always matches training, regardless
+    # of the order fields are defined above.
+    X = np.array([[feature_values[col] for col in feature_order]])
 
     X_scaled = scaler.transform(X)
     pred = model.predict(X_scaled)[0]
     course_label = course_enc.inverse_transform([pred])[0]
+    pred_proba = model.predict_proba(X_scaled)[0]
+    confidence = dict(zip(course_enc.classes_, pred_proba.round(2)))
 
     st.success(f"🎯 Recommended Course Level: **{course_label}**")
+    st.caption(f"Model confidence: {confidence}")
 
-    # --- PERFORMANCE SCORECARD ---
-    # Rebuilt using only the real inputs (no more fake focus/distraction numbers)
+    # --- PERFORMANCE SCORECARD (simple descriptive stats, not the ML model) --- #
     st.markdown("### 📊 Your Performance Scorecard")
     study_score = round(study_intensity / 10, 1)
     consistency_score = round(attendance / 10, 1)
-    test_prep_score = round(test_score / 10, 1)
+    sleep_score = round(sleep_quality / 10, 1)
 
     col1, col2, col3 = st.columns(3)
     col1.metric("📚 Study Intensity", f"{study_score}/10")
-    col2.metric("📅 Consistency", f"{consistency_score}/10")
-    col3.metric("🧠 Test Preparation", f"{test_prep_score}/10")
+    col2.metric("📅 Attendance", f"{consistency_score}/10")
+    col3.metric("😴 Sleep Consistency", f"{sleep_score}/10")
 
-    overall = round((study_score + consistency_score + test_prep_score) / 3, 1)
+    overall = round((study_score + consistency_score + sleep_score) / 3, 1)
     if overall >= 8:
         st.success(f"🌟 Overall Score: {overall}/10 — Excellent Performance!")
     elif overall >= 5:
@@ -113,19 +121,21 @@ if submitted:
     else:
         st.warning(f"⚠️ Overall Score: {overall}/10 — Needs improvement in study habits.")
 
-    # --- STUDY IMPROVEMENT ADVICE ---
+    # --- STUDY IMPROVEMENT ADVICE (rule-based, independent of the ML model) --- #
     st.markdown("### 🧠 Personalized Study Advice")
     tips = []
     if study_intensity < 40:
         tips.append("Increase your study time relative to your peers — aim for consistent daily study blocks.")
     if attendance < 75:
         tips.append("Maintain above 80% attendance to improve consistency.")
-    if test_score < 60:
-        tips.append("Revise difficult topics and take mock tests weekly.")
+    if sleep_quality < 40:
+        tips.append("Prioritize consistent sleep — it's linked with better focus and retention.")
+    if assignments_completed_pct < 60:
+        tips.append("Try to complete more assignments on time — they reinforce what you study.")
     if part_time_job and study_intensity < 50:
         tips.append("Balancing a part-time job with studies can be tough — try scheduling fixed study blocks around work hours.")
-    if not extracurricular and overall < 5:
-        tips.append("Consider light extracurricular involvement — it's linked with better overall engagement in the training data.")
+    if not internet_access:
+        tips.append("Limited internet access can restrict resources — check if your institution offers offline materials.")
 
     if not tips:
         st.success("🔥 Excellent! Your study habits are strong. Keep it up!")
@@ -133,7 +143,7 @@ if submitted:
         for t in tips:
             st.markdown(f"- {t}")
 
-    # --- SUBJECT RECOMMENDATION (rule-based, independent of the ML model) --- #
+    # --- SUBJECT RECOMMENDATION (rule-based, uses test_score, independent of the ML model) --- #
     st.markdown("### 📘 Subject Recommendation Based on Your Inputs")
     if not tenth_passed:
         st.info("We recommend you complete 10th first before choosing a stream.")
@@ -151,14 +161,15 @@ if submitted:
         st.markdown("### 🎓 Recommended Courses for Your Stream")
         if not courses_df.empty:
             df_filtered = courses_df[
-                (courses_df["subject"].str.lower() == stream.lower()) &
+                (courses_df["subject"].str.lower() == recommended_subject.lower()) &
                 (courses_df["level"].str.lower() == course_label.lower())
             ]
             if not df_filtered.empty:
                 for _, row in df_filtered.iterrows():
-                    st.markdown(f"**{row['name']}**  \n📘 *{row['subject']} | {row['level']}*  \n🔗 [Go to Course](https://www.coursera.org/learn/{row['slug']})")
+                    search_query = row['name'].replace(' ', '%20')
+                    st.markdown(f"**{row['name']}**  \n📘 *{row['subject']} | {row['level']}*  \n🔗 [Search on Coursera](https://www.coursera.org/search?query={search_query})")
                     st.markdown("---")
             else:
-                st.info("No courses found for your selected stream and recommended level.")
+                st.info("No courses found for your recommended subject and level.")
         else:
             st.warning("⚠️ No dataset found. Please add 'dataset/courses.csv'.")
